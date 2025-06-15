@@ -11,7 +11,7 @@ df.columns = df.columns.str.strip().str.lower()
 df.rename(columns={
     'precio de la cripto en eur': 'precio_unitario_eur',
     'total eur (tras pagar comisión)': 'total_eur',
-    'comisión': 'comision'
+    'comisión eur': 'comision'
 }, inplace=True)
 
 # Convertir fecha y ordenar
