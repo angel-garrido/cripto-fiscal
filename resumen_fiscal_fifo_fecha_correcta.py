@@ -6,11 +6,11 @@ df = pd.read_excel(archivo, sheet_name="Transacciones")
 
 # Normalizar columnas
 df.columns = df.columns.str.strip().str.lower()
-df.rename(columns={{
+df.rename(columns={
     'precio de la cripto en eur': 'precio_unitario',
     'total eur (tras pagar comisión)': 'total_eur',
     'valoración fiscal (€)': 'valoracion_fiscal'
-}}, inplace=True)
+}, inplace=True)
 
 # Convertir fecha correctamente (con hora)
 df['fecha'] = pd.to_datetime(df['fecha'], dayfirst=True)
