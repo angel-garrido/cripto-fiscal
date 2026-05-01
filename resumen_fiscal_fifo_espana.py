@@ -4,7 +4,7 @@ from datetime import datetime
 
 # ====================== CONFIGURACIÓN ======================
 archivo_entrada = "Cripto_Control_Fiscal.xlsx"
-archivo_salida = "resumen_fiscal_crypto_ESPANA_PRECISO.xlsx"
+archivo_salida = "resumen_fiscal_crypto_ESPANA.xlsx"
 
 # Leer datos
 df = pd.read_excel(archivo_entrada, sheet_name="Transacciones")
