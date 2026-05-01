@@ -131,4 +131,3 @@ with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
     }).to_excel(writer, sheet_name="Instrucciones Renta España", index=False)
 
 print(f"\n✅ Archivo generado correctamente: **{archivo_salida}**")
-files.download(archivo_salida)
