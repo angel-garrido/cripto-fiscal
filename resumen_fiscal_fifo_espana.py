@@ -179,4 +179,3 @@ with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
 print(f"\n✅ Archivo generado correctamente: **{archivo_salida}**")
 print("   → Incluye nueva pestaña 'Agrupado por Año'")
 print("   → Referral Commission separado correctamente")
-files.download(archivo_salida)
