@@ -15,25 +15,27 @@ df['año'] = df['fecha'].dt.year
 # Referral
 df['es_referral'] = df['tipo'].str.contains('referral', case=False, na=False)
 
-# ====================== FIFO DETALLADO ======================
+# ====================== FIFO ESTRICTO ======================
 entradas = df[df['tipo'].isin(['compra', 'recompensa', 'minería']) & ~df['es_referral']].copy()
 entradas['valor_unitario'] = entradas['total eur (tras pagar comisión)'].fillna(0) / entradas['cantidad'].replace(0, 1)
 
 ventas_ganancia = df[(df['tipo'] == 'venta') & ~df['moneda'].isin(['EUR']) & ~df['es_referral']].copy()
 
-def calcular_fifo(ventas_df, entradas_df):
+def calcular_fifo_estricto(ventas_df, entradas_df):
     inventario = []
     detalle = []
 
-    for _, e in entradas_df.iterrows():
+    # Cargar inventario ordenado por fecha
+    for _, e in entradas_df.sort_values('fecha').iterrows():
         inventario.append({
             'fecha': e['fecha'],
             'moneda': e['moneda'],
             'cantidad': float(e['cantidad']),
-            'valor_unitario': float(e['valor_unitario'])
+            'valor_unitario': float(e['valor_unitario']),
+            'origen': e['tipo']
         })
 
-    for _, venta in ventas_df.iterrows():
+    for _, venta in ventas_df.sort_values('fecha').iterrows():
         cant_total = float(venta['cantidad'])
         total_ing = float(venta['total eur (tras pagar comisión)'])
         moneda = venta['moneda']
@@ -41,9 +43,11 @@ def calcular_fifo(ventas_df, entradas_df):
         rest = cant_total
 
         while rest > 0 and inventario:
+            # Solo entradas de la misma moneda y anteriores o iguales a la venta
             posibles = [i for i in inventario if i['moneda'] == moneda and i['fecha'] <= fecha]
             if not posibles:
                 break
+            # FIFO: la más antigua
             ent = sorted(posibles, key=lambda x: x['fecha'])[0]
             usado = min(rest, ent['cantidad'])
 
@@ -53,6 +57,7 @@ def calcular_fifo(ventas_df, entradas_df):
 
             detalle.append({
                 'Año': fecha.year,
+                'Fecha Venta': fecha,
                 'Moneda': moneda,
                 'Cantidad Vendida': round(cant_total, 6),
                 'Valor Transmisión': round(ingreso, 2),
@@ -65,11 +70,12 @@ def calcular_fifo(ventas_df, entradas_df):
             if ent['cantidad'] <= 1e-8:
                 inventario.remove(ent)
             rest -= usado
+
     return pd.DataFrame(detalle)
 
-fifo_detalle = calcular_fifo(ventas_ganancia, entradas)
+fifo_detalle = calcular_fifo_estricto(ventas_ganancia, entradas)
 
-# ====================== RESUMEN ANUAL ======================
+# Resumen Anual
 resumen_anual = pd.DataFrame({'Año': range(2020, 2027)}).set_index('Año')
 
 resumen_anual['Ganancia_Patrimonial'] = fifo_detalle.groupby('Año')['Beneficio/Pérdida'].sum()
@@ -79,20 +85,22 @@ resumen_anual['Referral_Commission'] = df[df['es_referral']].groupby('año')['to
 
 resumen_anual = resumen_anual.fillna(0).round(2).reset_index()
 
-# ====================== AGRUPADO POR AÑO ======================
-agrupado = fifo_detalle.groupby(['Año', 'Moneda']).agg({
-    'Cantidad Vendida': 'sum',
-    'Valor Transmisión': 'sum',
-    'Valor Adquisición': 'sum',
-    'Beneficio/Pérdida': 'sum'
-}).round(2).reset_index()
+print("Resumen Anual:")
+print(resumen_anual)
 
-agrupado['Tipo Contraprestación'] = 'N'
-
-# ====================== EXPORTAR ======================
+# Exportar
 with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
     resumen_anual.to_excel(writer, sheet_name="Resumen Anual", index=False)
+    
+    agrupado = fifo_detalle.groupby(['Año', 'Moneda']).agg({
+        'Cantidad Vendida': 'sum',
+        'Valor Transmisión': 'sum',
+        'Valor Adquisición': 'sum',
+        'Beneficio/Pérdida': 'sum'
+    }).round(2).reset_index()
+    agrupado['Tipo Contraprestación'] = 'N'
     agrupado.to_excel(writer, sheet_name="Agrupado por Año", index=False)
+    
     fifo_detalle.to_excel(writer, sheet_name="FIFO Tracking Detallado", index=False)
 
     pd.DataFrame({
@@ -101,5 +109,4 @@ with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
         'Notas': ["Ver pestaña Agrupado por Año", "Valor de mercado", "Valor de mercado", "Base General"]
     }).to_excel(writer, sheet_name="Instrucciones Renta España", index=False)
 
-print("✅ Archivo generado")
-print(resumen_anual)
+print("\n✅ Archivo generado")
