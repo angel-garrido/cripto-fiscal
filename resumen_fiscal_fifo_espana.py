@@ -21,7 +21,7 @@ entradas['valor_unitario'] = entradas['total eur (tras pagar comisión)'].fillna
 
 ventas_ganancia = df[(df['tipo'] == 'venta') & ~df['moneda'].isin(['EUR']) & ~df['es_referral']].copy()
 
-def calcular_fifo_detalle(ventas_df, entradas_df):
+def calcular_fifo(ventas_df, entradas_df):
     inventario = []
     detalle = []
 
@@ -42,7 +42,8 @@ def calcular_fifo_detalle(ventas_df, entradas_df):
 
         while rest > 0 and inventario:
             posibles = [i for i in inventario if i['moneda'] == moneda and i['fecha'] <= fecha]
-            if not posibles: break
+            if not posibles:
+                break
             ent = sorted(posibles, key=lambda x: x['fecha'])[0]
             usado = min(rest, ent['cantidad'])
 
@@ -52,7 +53,6 @@ def calcular_fifo_detalle(ventas_df, entradas_df):
 
             detalle.append({
                 'Año': fecha.year,
-                'Fecha Venta': fecha,
                 'Moneda': moneda,
                 'Cantidad Vendida': round(cant_total, 6),
                 'Valor Transmisión': round(ingreso, 2),
@@ -67,7 +67,7 @@ def calcular_fifo_detalle(ventas_df, entradas_df):
             rest -= usado
     return pd.DataFrame(detalle)
 
-fifo_detalle = calcular_fifo_detalle(ventas_ganancia, entradas)
+fifo_detalle = calcular_fifo(ventas_ganancia, entradas)
 
 # ====================== RESUMEN ANUAL ======================
 resumen_anual = pd.DataFrame({'Año': range(2020, 2027)}).set_index('Año')
@@ -97,9 +97,9 @@ with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
 
     pd.DataFrame({
         'Concepto': ["Ganancia/Pérdida Patrimonial", "Rendimientos Recompensas", "Rendimientos Minería", "Referral Commission"],
-        'Dónde declararlo': ["Casillas 1800-1814 (F2)", "Casilla 0033", "Casilla 0033", "Casilla 0304 (Base General)"],
+        'Dónde declararlo': ["1800-1814 (F2)", "0033", "0033", "0304 (Base General)"],
         'Notas': ["Ver pestaña Agrupado por Año", "Valor de mercado", "Valor de mercado", "Base General"]
     }).to_excel(writer, sheet_name="Instrucciones Renta España", index=False)
 
-print("✅ Archivo generado correctamente")
+print("✅ Archivo generado")
 print(resumen_anual)
