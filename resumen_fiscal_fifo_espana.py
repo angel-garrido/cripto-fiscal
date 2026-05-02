@@ -3,7 +3,7 @@ import pandas as pd
 archivo_entrada = "Cripto_Control_Fiscal.xlsx"
 archivo_salida = "resumen_fiscal_crypto_ESPANA.xlsx"
 
-# Cargar datos
+# Cargar datos directamente del archivo proporcionado
 df = pd.read_excel(archivo_entrada, sheet_name="Transacciones")
 
 # --- NORMALIZACIÓN ---
@@ -17,15 +17,18 @@ df['año'] = df['fecha'].dt.year
 df['es_referral'] = df['tipo'].str.contains('referral', case=False, na=False)
 
 # --- PREPARACIÓN FIFO ---
+# Las Recompensas/Minería entran al inventario con su valor en EUR en el momento de recibirlas
 entradas = df[df['tipo'].isin(['compra', 'recompensa', 'minería']) & ~df['es_referral']].copy()
 entradas['valor_unitario'] = entradas['total eur (tras pagar comisión)'].fillna(0) / entradas['cantidad'].replace(0, 1)
 
+# Filtramos solo ventas de criptoactivos (excluimos EUR)
 ventas_ganancia = df[(df['tipo'] == 'venta') & (df['moneda'] != 'EUR') & ~df['es_referral']].copy()
 
 def calcular_fifo_estricto(ventas_df, entradas_df, df_full):
     inventario = []
     detalle = []
 
+    # Cargar inventario ordenado cronológicamente
     for _, e in entradas_df.sort_values('fecha').iterrows():
         inventario.append({
             'fecha': e['fecha'],
@@ -40,13 +43,13 @@ def calcular_fifo_estricto(ventas_df, entradas_df, df_full):
         moneda = venta['moneda']
         fecha = venta['fecha']
         
-        # --- LÓGICA DE TIPO DE CONTRAPRESTACIÓN (Según imagen Renta) ---
-        # Buscamos si en el mismo momento hubo una compra de otra moneda virtual
+        # --- DETERMINACIÓN DEL TIPO DE CONTRAPRESTACIÓN (Letra Renta) ---
+        # Si en la misma fecha hay una 'compra' de una cripto (no EUR), es una PERMUTA
         vinculadas = df_full[df_full['fecha'] == fecha]
-        es_permuta = vinculadas[(vinculadas['tipo'] == 'compra') & (vinculadas['moneda'] != 'EUR')].any().any()
+        tiene_compra_cripto = vinculadas[(vinculadas['tipo'] == 'compra') & (vinculadas['moneda'] != 'EUR')].any().any()
         
-        # F: Moneda curso legal | N: Otra moneda virtual
-        tipo_contraprestacion = 'N' if es_permuta else 'F'
+        # N: Otra moneda virtual (Permutas) | F: Moneda curso legal (Venta a €)
+        tipo_contraprestacion = 'N' if tiene_compra_cripto else 'F'
         
         precio_venta_unitario = total_ingreso_venta / cant_pendiente if cant_pendiente > 0 else 0
 
@@ -78,12 +81,12 @@ def calcular_fifo_estricto(ventas_df, entradas_df, df_full):
             
     return pd.DataFrame(detalle)
 
-# Ejecutar
+# Ejecución del motor FIFO
 fifo_detalle = calcular_fifo_estricto(ventas_ganancia, entradas, df)
 
-# --- EXPORTACIÓN ---
+# --- GENERACIÓN DE EXCEL ---
 with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
-    # Resumen Anual
+    # 1. Resumen Anual por categorías de Renta
     res_anual = pd.DataFrame({'Año': sorted(df['año'].unique())}).set_index('Año')
     res_anual['Ganancia_Patrimonial'] = fifo_detalle.groupby('Año')['Beneficio/Pérdida'].sum()
     res_anual['Rendimientos_Recompensas'] = df[(df['tipo']=='recompensa') & ~df['es_referral']].groupby('año')['total eur (tras pagar comisión)'].sum()
@@ -91,7 +94,7 @@ with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
     res_anual['Referral_Commission'] = df[df['es_referral']].groupby('año')['total eur (tras pagar comisión)'].sum()
     res_anual.fillna(0).round(2).reset_index().to_excel(writer, sheet_name="Resumen Anual", index=False)
 
-    # Agrupado por Año (Listo para volcar a la Renta)
+    # 2. Agrupado por Año y Moneda (Clave para las casillas 1800+)
     agrupado = fifo_detalle.groupby(['Año', 'Moneda', 'Tipo Contraprestación']).agg({
         'Cantidad Vendida': 'sum',
         'Valor Transmisión': 'sum',
@@ -100,13 +103,13 @@ with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
     }).round(2).reset_index()
     agrupado.to_excel(writer, sheet_name="Agrupado por Año", index=False)
 
-    # Detalle y Ayuda
+    # 3. Detalle completo de cada tramo FIFO
     fifo_detalle.to_excel(writer, sheet_name="FIFO Tracking Detallado", index=False)
+    
+    # 4. Leyenda Técnica Renta
     pd.DataFrame([
-        {'Letra': 'F', 'Descripción': 'Moneda de curso legal (Euros)', 'Uso': 'Venta directa a €'},
-        {'Letra': 'N', 'Descripción': 'Otra moneda virtual', 'Uso': 'Permuta (cambio por otra cripto)'},
-        {'Letra': 'O', 'Descripción': 'Otro activo virtual', 'Uso': 'NFTs u otros activos'},
-        {'Letra': 'B', 'Descripción': 'Bienes o servicios', 'Uso': 'Pago de compras con cripto'}
-    ]).to_excel(writer, sheet_name="Leyenda Tipos Renta", index=False)
+        {'Clave': 'N', 'Descripción': 'Intercambio de criptos o stablecoins (Permuta)', 'Ejemplo': 'USDC por BTC'},
+        {'Clave': 'F', 'Descripción': 'Venta por Euros (Moneda de curso legal)', 'Ejemplo': 'BTC por Euros'}
+    ]).to_excel(writer, sheet_name="Ayuda Letras Contraprestación", index=False)
 
-print(f"✅ Archivo '{archivo_salida}' generado. Usa la columna 'Tipo Contraprestación' para el desplegable de la Renta.")
+print(f"✅ Análisis completado. Se ha generado '{archivo_salida}'.")
