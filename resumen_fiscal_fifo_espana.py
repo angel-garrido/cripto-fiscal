@@ -15,16 +15,15 @@ df['año'] = df['fecha'].dt.year
 # Referral
 df['es_referral'] = df['tipo'].str.contains('referral', case=False, na=False)
 
-# ====================== RESUMEN ANUAL (con FIFO) ======================
+# ====================== FIFO PARA GANANCIA PATRIMONIAL ======================
 entradas = df[df['tipo'].isin(['compra', 'recompensa', 'minería']) & ~df['es_referral']].copy()
 entradas['valor_unitario'] = entradas['total eur (tras pagar comisión)'].fillna(0) / entradas['cantidad'].replace(0, 1)
 
 ventas_ganancia = df[(df['tipo'] == 'venta') & ~df['moneda'].isin(['EUR']) & ~df['es_referral']].copy()
 
-# FIFO para Ganancia Patrimonial
-def calcular_fifo(ventas_df, entradas_df):
+def calcular_fifo_beneficio(ventas_df, entradas_df):
     inventario = []
-    detalle = []
+    beneficio_por_año = {}
 
     for _, e in entradas_df.iterrows():
         inventario.append({
@@ -34,11 +33,12 @@ def calcular_fifo(ventas_df, entradas_df):
             'valor_unitario': float(e['valor_unitario'])
         })
 
-    for _, venta in ventas_df.iterrows():
+    for _, venta in ventas_ganancia.iterrows():
         cant_total = float(venta['cantidad'])
         total_ing = float(venta['total eur (tras pagar comisión)'])
         moneda = venta['moneda']
         fecha = venta['fecha']
+        año = fecha.year
         rest = cant_total
 
         while rest > 0 and inventario:
@@ -51,28 +51,32 @@ def calcular_fifo(ventas_df, entradas_df):
             ingreso = (usado / cant_total) * total_ing if cant_total > 0 else 0
             beneficio = ingreso - coste
 
-            detalle.append({
-                'Año': fecha.year,
-                'Beneficio/Pérdida': round(beneficio, 2)
-            })
+            if año not in beneficio_por_año:
+                beneficio_por_año[año] = 0
+            beneficio_por_año[año] += beneficio
 
             ent['cantidad'] -= usado
             if ent['cantidad'] <= 1e-8:
                 inventario.remove(ent)
             rest -= usado
-    return pd.DataFrame(detalle)
 
-fifo_result = calcular_fifo(ventas_ganancia, entradas)
+    return beneficio_por_año
+
+beneficios = calcular_fifo_beneficio(ventas_ganancia, entradas)
 
 # Resumen Anual
 resumen_anual = pd.DataFrame({'Año': range(2020, 2027)}).set_index('Año')
-resumen_anual['Ganancia_Patrimonial'] = fifo_result.groupby('Año')['Beneficio/Pérdida'].sum()
+resumen_anual['Ganancia_Patrimonial'] = pd.Series(beneficios)
 resumen_anual['Rendimientos_Recompensas'] = df[(df['tipo']=='recompensa') & ~df['es_referral']].groupby('año')['total eur (tras pagar comisión)'].sum()
 resumen_anual['Rendimientos_Minería'] = df[df['tipo']=='minería'].groupby('año')['total eur (tras pagar comisión)'].sum()
 resumen_anual['Referral_Commission'] = df[df['es_referral']].groupby('año')['total eur (tras pagar comisión)'].sum()
+
 resumen_anual = resumen_anual.fillna(0).round(2).reset_index()
 
-# ====================== AGRUPADO POR AÑO (cantidad raw) ======================
+print("Resumen Anual:")
+print(resumen_anual)
+
+# Agrupado por Año (cantidad raw)
 ventas = df[(df['tipo'] == 'venta') & ~df['moneda'].isin(['EUR']) & ~df['es_referral']]
 agrupado = ventas.groupby(['año', 'moneda']).agg({
     'cantidad': 'sum',
@@ -94,7 +98,8 @@ agrupado['Beneficio/Pérdida'] = 0.0
 with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
     resumen_anual.to_excel(writer, sheet_name="Resumen Anual", index=False)
     agrupado.to_excel(writer, sheet_name="Agrupado por Año", index=False)
-    fifo_result.to_excel(writer, sheet_name="FIFO Tracking Detallado", index=False)  # simplificado
+    # FIFO Detallado simple
+    ventas[['fecha', 'moneda', 'cantidad', 'total eur (tras pagar comisión)']].to_excel(writer, sheet_name="FIFO Tracking Detallado", index=False)
 
     pd.DataFrame({
         'Concepto': ["Ganancia/Pérdida Patrimonial", "Rendimientos Recompensas", "Rendimientos Minería", "Referral Commission"],
@@ -102,5 +107,4 @@ with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
         'Notas': ["Ver pestaña Agrupado por Año", "Valor de mercado", "Valor de mercado", "Base General"]
     }).to_excel(writer, sheet_name="Instrucciones Renta España", index=False)
 
-print("✅ Archivo generado correctamente")
-print(resumen_anual)
+print("\n✅ Archivo generado correctamente")
