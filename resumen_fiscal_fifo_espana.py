@@ -15,13 +15,13 @@ df['año'] = df['fecha'].dt.year
 # Referral
 df['es_referral'] = df['tipo'].str.contains('referral', case=False, na=False)
 
-# ====================== FIFO DETALLADO ======================
+# ====================== FIFO ======================
 entradas = df[df['tipo'].isin(['compra', 'recompensa', 'minería']) & ~df['es_referral']].copy()
 entradas['valor_unitario'] = entradas['total eur (tras pagar comisión)'].fillna(0) / entradas['cantidad'].replace(0, 1)
 
 ventas_ganancia = df[(df['tipo'] == 'venta') & ~df['moneda'].isin(['EUR']) & ~df['es_referral']].copy()
 
-def calcular_fifo_detalle(ventas_df, entradas_df):
+def calcular_fifo(ventas_df, entradas_df):
     inventario = []
     detalle = []
 
@@ -52,7 +52,6 @@ def calcular_fifo_detalle(ventas_df, entradas_df):
 
             detalle.append({
                 'Año': fecha.year,
-                'Fecha Venta': fecha,
                 'Moneda': moneda,
                 'Cantidad Vendida': round(cant_total, 6),
                 'Valor Transmisión': round(ingreso, 2),
@@ -67,9 +66,9 @@ def calcular_fifo_detalle(ventas_df, entradas_df):
             rest -= usado
     return pd.DataFrame(detalle)
 
-fifo_detalle = calcular_fifo_detalle(ventas_ganancia, entradas)
+fifo_detalle = calcular_fifo(ventas_ganancia, entradas)
 
-# ====================== RESUMEN ANUAL ======================
+# Resumen Anual
 resumen_anual = pd.DataFrame({'Año': range(2020, 2027)}).set_index('Año')
 
 resumen_anual['Ganancia_Patrimonial'] = fifo_detalle.groupby('Año')['Beneficio/Pérdida'].sum()
@@ -79,7 +78,7 @@ resumen_anual['Referral_Commission'] = df[df['es_referral']].groupby('año')['to
 
 resumen_anual = resumen_anual.fillna(0).round(2).reset_index()
 
-# ====================== AGRUPADO POR AÑO ======================
+# Agrupado por Año
 agrupado = fifo_detalle.groupby(['Año', 'Moneda']).agg({
     'Cantidad Vendida': 'sum',
     'Valor Transmisión': 'sum',
@@ -89,7 +88,7 @@ agrupado = fifo_detalle.groupby(['Año', 'Moneda']).agg({
 
 agrupado['Tipo Contraprestación'] = 'N'
 
-# ====================== EXPORTAR ======================
+# Exportar
 with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
     resumen_anual.to_excel(writer, sheet_name="Resumen Anual", index=False)
     agrupado.to_excel(writer, sheet_name="Agrupado por Año", index=False)
